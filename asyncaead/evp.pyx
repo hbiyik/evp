@@ -42,13 +42,13 @@ cdef class Aead:
         if evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_SET_IVLEN, len(iv), NULL) == 0:
             return self.handleerror("Config", ctx)
         if aadlen and evp.EVP_CipherUpdate(ctx, NULL, &outputlen, aad, aadlen) == 0:
-            return self.handleerror("Process", ctx)
+            return self.handleerror("AAD-Processing", ctx)
         if evp.EVP_CipherUpdate(ctx, output, &outputlen, datain, inputlen) == 0:
-            return self.handleerror("Process", ctx)
+            return self.handleerror("Block-Processing", ctx)
         if evp.EVP_CipherFinal_ex(ctx, output, &outputlen) == 0:
             return self.handleerror("Finalization", ctx)
         if isenc and evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_GET_TAG, evp.EVP_CHACHAPOLY_TLS_TAG_LEN, tag) == 0:
-            return self.handleerror("Tag Config", ctx)
+            return self.handleerror("Tag-Processing", ctx)
         evp.EVP_CIPHER_CTX_free(ctx)
         return 1
     
