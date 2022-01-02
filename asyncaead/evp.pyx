@@ -24,9 +24,8 @@ cdef class Aead:
         cdef unsigned char tag[16]
         tag = datain[inputlen:inputlen + evp.EVP_CHACHAPOLY_TLS_TAG_LEN]
         cdef evp.EVP_CIPHER_CTX *ctx = evp.EVP_CIPHER_CTX_new()
-        evp.EVP_DecryptInit_ex(ctx, evp.EVP_chacha20_poly1305(), NULL, NULL, NULL)
+        evp.EVP_DecryptInit_ex(ctx, evp.EVP_chacha20_poly1305(), NULL, key, iv)
         evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_SET_IVLEN, len(iv), NULL)
-        evp.EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv)
         if aadlen:
             evp.EVP_DecryptUpdate(ctx, NULL, &outputlen, aad, aadlen)
         evp.EVP_DecryptUpdate(ctx, output, &outputlen, datain, inputlen)
@@ -49,9 +48,8 @@ cdef class Aead:
         cdef unsigned char tag[16]
         cdef evp.EVP_CIPHER_CTX *ctx = evp.EVP_CIPHER_CTX_new()
 
-        evp.EVP_EncryptInit_ex(ctx, evp.EVP_chacha20_poly1305(), NULL, NULL, NULL)
+        evp.EVP_EncryptInit_ex(ctx, evp.EVP_chacha20_poly1305(), NULL, key, iv)
         evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_SET_IVLEN, len(iv), NULL)
-        evp.EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv)
         if aadlen:
             evp.EVP_EncryptUpdate(ctx, NULL, &outputlen, aad, aadlen)
         evp.EVP_EncryptUpdate(ctx, output, &outputlen, datain, inputlen)
