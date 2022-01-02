@@ -10,7 +10,7 @@ from libnacl.aead import AEAD
 evpaead = evp.Aead()
 
 
-for i in range(2 ** 5, 2 ** 20, 2 ** 9):
+for i in range(2 ** 5, 2 ** 15, 2 ** 9):
     content = os.urandom(i)
     key = os.urandom(32)
     nonce = os.urandom(12)
