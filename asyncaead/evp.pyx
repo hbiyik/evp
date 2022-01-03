@@ -23,17 +23,17 @@ cdef class Aead:
             raise(OpenSSLException("OpenSSL %s Error" % pretext))
         return 1
     
-    cdef inline int enc(self,
+    cdef int enc(self,
                bint isenc,
-               bytes output, 
-               bytes datain,
+               unsigned char *output,
+               int outputlen, 
+               unsigned char *datain,
                int inputlen,
-               bytes key,
-               bytes iv,
-               bytes aad,
-               unsigned char *tag) except -1:
-        cdef int outputlen = inputlen
-        cdef int aadlen = len(aad)
+               unsigned char *key,
+               unsigned char *iv,
+               unsigned char *aad,
+               int aadlen,
+               unsigned char *tag):
         cdef evp.EVP_CIPHER_CTX *ctx = evp.EVP_CIPHER_CTX_new()
         if not ctx:
             return self.handleerror("Initialization", ctx)
@@ -54,15 +54,19 @@ cdef class Aead:
     
     def encrypt(self, bytes datain, bytes key, bytes iv, bytes aad):
         cdef int inputlen = len(datain)
+        cdef int outputlen = inputlen
+        cdef int aadlen = len(aad)
         output = bytes(inputlen)
         cdef unsigned char tag[16]
-        self.enc(1, output, datain, inputlen, key, iv, aad, tag)
+        self.enc(1, output, outputlen, datain, inputlen, key, iv, aad, aadlen, tag)
         return output + tag[:evp.EVP_CHACHAPOLY_TLS_TAG_LEN]
     
     def decrypt(self, bytes datain, bytes key, bytes iv, bytes aad):
         cdef int inputlen = len(datain) - evp.EVP_CHACHAPOLY_TLS_TAG_LEN
+        cdef int outputlen = inputlen
+        cdef int aadlen = len(aad)
         output = bytes(inputlen)
         cdef unsigned char tag[16]
         tag = datain[inputlen:evp.EVP_CHACHAPOLY_TLS_TAG_LEN + inputlen]
-        self.enc(0, output, datain, inputlen, key, iv, aad, tag)
+        self.enc(0, output, outputlen, datain, inputlen, key, iv, aad, aadlen, tag)
         return output
