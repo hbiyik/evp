@@ -23,7 +23,7 @@ cdef class Aead:
             raise(OpenSSLException("OpenSSL %s Error" % pretext))
         return 1
     
-    cdef int enc(self,
+    cdef inline int enc(self,
                bint isenc,
                unsigned char *output,
                int outputlen, 
@@ -33,7 +33,7 @@ cdef class Aead:
                unsigned char *iv,
                unsigned char *aad,
                int aadlen,
-               unsigned char *tag):
+               unsigned char *tag) except -1:
         cdef evp.EVP_CIPHER_CTX *ctx = evp.EVP_CIPHER_CTX_new()
         if not ctx:
             return self.handleerror("Initialization", ctx)
