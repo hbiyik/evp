@@ -31,6 +31,7 @@ cdef class Aead:
                int inputlen,
                unsigned char *key,
                unsigned char *iv,
+               int ivlen,
                unsigned char *aad,
                int aadlen,
                unsigned char *tag) except -1:
@@ -39,7 +40,7 @@ cdef class Aead:
             return self.handleerror("Initialization", ctx)
         if evp.EVP_CipherInit_ex(ctx, evp.EVP_chacha20_poly1305(), NULL, key, iv, isenc) == 0:
             return self.handleerror("Cipher", ctx)
-        if evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_SET_IVLEN, len(iv), NULL) == 0:
+        if evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_SET_IVLEN, ivlen, NULL) == 0:
             return self.handleerror("Config", ctx)
         if aadlen and evp.EVP_CipherUpdate(ctx, NULL, &outputlen, aad, aadlen) == 0:
             return self.handleerror("AAD-Processing", ctx)
@@ -56,17 +57,19 @@ cdef class Aead:
         cdef int inputlen = len(datain)
         cdef int outputlen = inputlen
         cdef int aadlen = len(aad)
+        cdef int ivlen = len(iv)
         output = bytes(inputlen)
         cdef unsigned char tag[16]
-        self.enc(1, output, outputlen, datain, inputlen, key, iv, aad, aadlen, tag)
+        self.enc(1, output, outputlen, datain, inputlen, key, iv, ivlen, aad, aadlen, tag)
         return output + tag[:evp.EVP_CHACHAPOLY_TLS_TAG_LEN]
     
     def decrypt(self, bytes datain, bytes key, bytes iv, bytes aad):
         cdef int inputlen = len(datain) - evp.EVP_CHACHAPOLY_TLS_TAG_LEN
         cdef int outputlen = inputlen
         cdef int aadlen = len(aad)
+        cdef int ivlen = len(iv)
         output = bytes(inputlen)
         cdef unsigned char tag[16]
         tag = datain[inputlen:evp.EVP_CHACHAPOLY_TLS_TAG_LEN + inputlen]
-        self.enc(0, output, outputlen, datain, inputlen, key, iv, aad, aadlen, tag)
+        self.enc(0, output, outputlen, datain, inputlen, key, iv, ivlen, aad, aadlen, tag)
         return output
