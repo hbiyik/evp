@@ -1,9 +1,30 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <?eclipse-pydev version="1.0"?><pydev_project>
-    <pydev_pathproperty name="org.python.pydev.PROJECT_SOURCE_PATH">
-        <path>/${PROJECT_DIR_NAME}</path>
-        <path>/${PROJECT_DIR_NAME}/build/lib.linux-x86_64-3.8</path>
-    </pydev_pathproperty>
+                        
+    
+        
+    
+    
+    
+    
     <pydev_property name="org.python.pydev.PYTHON_PROJECT_VERSION">python interpreter</pydev_property>
-    <pydev_property name="org.python.pydev.PYTHON_PROJECT_INTERPRETER">Default</pydev_property>
+                        
+    
+    
+    
+    
+    <pydev_property name="org.python.pydev.PYTHON_PROJECT_INTERPRETER">python3</pydev_property>
+                    
+
+    
+    
+    
+    <pydev_pathproperty name="org.python.pydev.PROJECT_SOURCE_PATH">
+        <path>/${PROJECT_DIR_NAME}/build/lib.linux-x86_64-3.8</path>
+        <path>/${PROJECT_DIR_NAME}/test</path>
+        <path>/${PROJECT_DIR_NAME}/python3.8-3.8.10</path>
+    </pydev_pathproperty>
+            
+
+
 </pydev_project>

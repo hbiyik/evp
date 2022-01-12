@@ -1,75 +1,84 @@
-from asyncaead cimport evp
-
-
-class OpenSSLException(Exception):
-    pass
-
-
-cdef class Aead:
-    """
-    cdef evp.EVP_CIPHER_CTX *ctx
-    
-    def __cinit__(self):
-        pass
-        
-    def __dealloc__(self):
-        pass
-    """
-    cdef inline int handleerror(self, str pretext, evp.EVP_CIPHER_CTX *ctx) except -1:
-        if ctx:
-            evp.EVP_CIPHER_CTX_free(ctx)  
-            raise(OpenSSLException("OpenSSL " + pretext + "Error: " + evp.errbytes().decode('UTF-8')))
-        else:
-            raise(OpenSSLException("OpenSSL %s Error" % pretext))
-        return 1
-    
-    cdef inline int enc(self,
-               bint isenc,
-               unsigned char *output,
-               int outputlen, 
-               unsigned char *datain,
-               int inputlen,
-               unsigned char *key,
-               unsigned char *iv,
-               int ivlen,
-               unsigned char *aad,
-               int aadlen,
-               unsigned char *tag) except -1:
-        cdef evp.EVP_CIPHER_CTX *ctx = evp.EVP_CIPHER_CTX_new()
-        if not ctx:
-            return self.handleerror("Initialization", ctx)
-        if evp.EVP_CipherInit_ex(ctx, evp.EVP_chacha20_poly1305(), NULL, key, iv, isenc) == 0:
-            return self.handleerror("Cipher", ctx)
-        if evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_SET_IVLEN, ivlen, NULL) == 0:
-            return self.handleerror("Config", ctx)
-        if aadlen and evp.EVP_CipherUpdate(ctx, NULL, &outputlen, aad, aadlen) == 0:
-            return self.handleerror("AAD-Processing", ctx)
-        if evp.EVP_CipherUpdate(ctx, output, &outputlen, datain, inputlen) == 0:
-            return self.handleerror("Block-Processing", ctx)
-        if evp.EVP_CipherFinal_ex(ctx, output, &outputlen) == 0:
-            return self.handleerror("Finalization", ctx)
-        if isenc and evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_GET_TAG, evp.EVP_CHACHAPOLY_TLS_TAG_LEN, tag) == 0:
-            return self.handleerror("Tag-Processing", ctx)
+cdef int enc(bint isenc,
+             unsigned char *output, int outputlen, 
+             unsigned char *datain, int inputlen,
+             unsigned char *key,
+             unsigned char *iv, int ivlen,
+             unsigned char *aad, int aadlen,
+             unsigned char *tag) nogil except -1:
+    cdef evp.EVP_CIPHER_CTX *ctx = evp.EVP_CIPHER_CTX_new()
+    if ctx == NULL:
         evp.EVP_CIPHER_CTX_free(ctx)
-        return 1
+        raise(AeadError("Can not initialize OpenSSL"))
+    errcheck_ssl(evp.EVP_CipherInit_ex(ctx, evp.EVP_chacha20_poly1305(), NULL, key, iv, isenc), ctx)
+    errcheck_ssl(evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_SET_IVLEN, ivlen, NULL), ctx)
+    errcheck_ssl(aadlen and evp.EVP_CipherUpdate(ctx, NULL, &outputlen, aad, aadlen), ctx)
+    errcheck_ssl(evp.EVP_CipherUpdate(ctx, output, &outputlen, datain, inputlen), ctx)
+    errcheck_ssl(evp.EVP_CipherFinal_ex(ctx, output, &outputlen), ctx)
+    errcheck_ssl(isenc and evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_GET_TAG, evp.EVP_CHACHAPOLY_TLS_TAG_LEN, tag), ctx)
+    evp.EVP_CIPHER_CTX_free(ctx)
+    return 1
+
+
+cdef int enct(void ***buffer) nogil except -1:
+    cdef evp.EVP_CIPHER_CTX *ctx = evp.EVP_CIPHER_CTX_new()
+    cdef int * int_buffer = <int *>buffer[1]
+    cdef unsigned char ** chr_buffer = <unsigned char **>buffer[2]
     
-    def encrypt(self, bytes datain, bytes key, bytes iv, bytes aad):
-        cdef int inputlen = len(datain)
-        cdef int outputlen = inputlen
-        cdef int aadlen = len(aad)
-        cdef int ivlen = len(iv)
-        output = bytes(inputlen)
-        cdef unsigned char tag[16]
-        self.enc(1, output, outputlen, datain, inputlen, key, iv, ivlen, aad, aadlen, tag)
-        return output + tag[:evp.EVP_CHACHAPOLY_TLS_TAG_LEN]
+    cdef int i = 0
+    printf("ints:\n")
+    for i in range(7): 
+        printf("%d: %d\n", i, int_buffer[i])
     
-    def decrypt(self, bytes datain, bytes key, bytes iv, bytes aad):
-        cdef int inputlen = len(datain) - evp.EVP_CHACHAPOLY_TLS_TAG_LEN
-        cdef int outputlen = inputlen
-        cdef int aadlen = len(aad)
-        cdef int ivlen = len(iv)
-        output = bytes(inputlen)
-        cdef unsigned char tag[16]
-        tag = datain[inputlen:evp.EVP_CHACHAPOLY_TLS_TAG_LEN + inputlen]
-        self.enc(0, output, outputlen, datain, inputlen, key, iv, ivlen, aad, aadlen, tag)
-        return output
+    printf("chrs:\n")
+    for i in range(5):
+        printf("data %d: size:%d\n", i, int_buffer[i])
+        for j in range(int_buffer[i]):
+            printf("%02X", chr_buffer[i][j])
+        printf("\n")
+
+    if ctx == NULL:
+        evp.EVP_CIPHER_CTX_free(ctx)
+        printf("step1\n")
+        return -1
+    printf("step2\n")
+    errcheck_sslt(evp.EVP_CipherInit_ex(ctx,
+                                        evp.EVP_chacha20_poly1305(),  # TO-DO: make this generic
+                                        NULL,                         # engine -> None
+                                        chr_buffer[1],                # key*
+                                        chr_buffer[2],                # iv* 
+                                        int_buffer[6]),               # isenc:int
+                                        ctx)
+    printf("step3\n")
+    errcheck_sslt(evp.EVP_CIPHER_CTX_ctrl(ctx,
+                                          evp.EVP_CTRL_AEAD_SET_IVLEN,# TO-DO: make this generic
+                                          int_buffer[2],              # ivlen: int
+                                          NULL), ctx)
+    printf("step4\n")
+    if int_buffer[3] > 0:                                             # if len(aad) > 0
+        printf("step5\n")
+        errcheck_sslt(evp.EVP_CipherUpdate(ctx,
+                                           NULL,
+                                           &int_buffer[4] ,           # outlen*
+                                           chr_buffer[3],             # aad*
+                                           int_buffer[3]), ctx)       # inlen: int
+        printf("step6\n")
+    errcheck_sslt(evp.EVP_CipherUpdate(ctx,
+                                       chr_buffer[4],                 # out*
+                                       &int_buffer[4],                # outlen*
+                                       chr_buffer[0],                 # in*
+                                       int_buffer[0]), ctx)           # inlen: int
+    printf("step7\n")
+    errcheck_sslt(evp.EVP_CipherFinal_ex(ctx,
+                                         chr_buffer[4],                # out*
+                                         &int_buffer[4]), ctx)         # outlen*
+    printf("step8\n")
+    if int_buffer[6] == 1:                                             # if isenc
+        printf("step9\n")
+        errcheck_sslt(evp.EVP_CIPHER_CTX_ctrl(ctx,
+                                              evp.EVP_CTRL_AEAD_GET_TAG,              # TO-DO: make this generic
+                                              int_buffer[5],                          # taglen: int
+                                              &chr_buffer[4][int_buffer[4]]), ctx)    # tag*
+    printf("step10\n")
+    evp.EVP_CIPHER_CTX_free(ctx)
+    printf("step11\n")
+    return 1

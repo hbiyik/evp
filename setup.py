@@ -4,6 +4,16 @@ import platform
 import os
 
 
+DEBUG = False
+LDFLAGS = []
+
+if not DEBUG:
+    # strip the library
+    LDFLAGS.append("-s")
+    
+if not os.environ.get("LDFLAGS"):
+    os.environ["LDFLAGS"] = " ".join(LDFLAGS)
+
 extra_compile_args = []
 extra_objects = []
 libraries = []
@@ -45,7 +55,7 @@ def make_extension(name, sources):
         library_dirs=library_dirs)
 
 
-extensions = [make_extension('evp', ['asyncaead/evp.pyx']),]
+extensions = [make_extension('asyncaead', ['asyncaead/__init__.pyx']),]
 
 
 setup(
@@ -57,7 +67,9 @@ setup(
     classifiers=[
         'Development Status :: 3 - Alpha',
         'License :: OSI Approved :: MIT License'],
-    packages=['asyncaead'],
+    packages=[],
     install_requires=['Cython'],
-    ext_modules=cythonize(extensions)
+    ext_modules=cythonize(extensions,
+                          compiler_directives={'language_level' : "3"},
+                          gdb_debug=DEBUG)
     )
