@@ -76,27 +76,27 @@ cdef void * worker(void *arg) nogil:
             # acquite the GIL and provide the result to Future
             # TO-DO: handle exceptions here and pass to the Future
             printf("7\n")
-            """
-            try:
-                printf("8\n")
-                future = <object>backlog[0][5]
-                print(type(future))
-                #print(isinstance(future, Future))
-                printf("9\n")
-                data = <bytes>backlog[0][4]
-                printf("9.5\n")
-                print(data)
-                #future.set_result(data)
-                printf("10\n")
-                #decrease reference so GC can clean it when it is done with it.
-                #ref.Py_DECREF(future)
-                #ref.Py_DECREF(data)
-                printf("11\n")
-            except Exception as e:
-                print("Error............................")
-                print(e)
-                print(repr(e))
-            """
+            with gil:
+                try:
+                    printf("8\n")
+                    future = <object>backlog[0][5]
+                    print(type(future))
+                    #print(isinstance(future, Future))
+                    printf("9\n")
+                    data = <bytes>backlog[0][4]
+                    printf("9.5\n")
+                    print(data)
+                    #future.set_result(data)
+                    printf("10\n")
+                    #decrease reference so GC can clean it when it is done with it.
+                    #ref.Py_DECREF(future)
+                    #ref.Py_DECREF(data)
+                    printf("11\n")
+                except Exception as e:
+                    print("Error............................")
+                    print(e)
+                    print(repr(e))
+
     printf("Worker %ld finished, enabled: %d\n", thid, queue_enabled)
 
 
@@ -173,7 +173,6 @@ cdef int destroy_threads() except -1:
         printf("Destroy set enabled to 0\n")
         errcheck(pthread.pthread_cond_broadcast(&queue_cond_empty))
         errcheck(pthread.pthread_mutex_unlock(&queue_lock))
-        
         
         for index in range(queue_maxsize):
             # join threads first
