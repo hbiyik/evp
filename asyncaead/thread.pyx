@@ -1,5 +1,6 @@
 import time
-from asyncio import Future
+import sys
+from _asyncio import Future
 
 cdef int queue_cursor = 0
 cdef int queue_distance = 0
@@ -25,7 +26,6 @@ cdef void * worker(void *arg) nogil:
     global queue_lock
     global queue_cond_full
     global queue_cond_empty
-    
     
     thid = pthread.pthread_self()
     printf("Worker %ld started, enabled: %d\n", thid, queue_enabled)
@@ -80,17 +80,13 @@ cdef void * worker(void *arg) nogil:
                 try:
                     printf("8\n")
                     future = <object>backlog[0][5]
-                    print(type(future))
-                    #print(isinstance(future, Future))
                     printf("9\n")
                     data = <bytes>backlog[0][4]
                     printf("9.5\n")
-                    print(data)
-                    #future.set_result(data)
+                    future._loop.call_soon_threadsafe(future.set_result, data)
+                    ref.Py_DECREF(future)
                     printf("10\n")
                     #decrease reference so GC can clean it when it is done with it.
-                    #ref.Py_DECREF(future)
-                    #ref.Py_DECREF(data)
                     printf("11\n")
                 except Exception as e:
                     print("Error............................")

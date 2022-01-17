@@ -1,4 +1,4 @@
-from asyncio import Future
+from _asyncio import Future
 
 include "error.pyx"
 include "evp.pyx"
@@ -10,11 +10,13 @@ import sys
 cdef class Aead:
     cdef int threadhandle
     cdef int bufsize
+    cdef object loop
     
-    def __init__(self, unsigned int threadcount):
+    def __init__(self, unsigned int threadcount, loop=None):
         self.threadhandle = 0
         if threadcount < 1:
             raise(ValueError("Thread count can not be less than 1, %d given" % threadcount))
+        self.loop = loop
         self.threadhandle = init_threads(threadcount)
 
     def close(self):
@@ -30,8 +32,8 @@ cdef class Aead:
 
      
         output = bytes(object.PyObject_Size(datain) + taglen)
-        future = Future()
-        #ref.Py_INCREF(future)
+        future = Future(loop=self.loop)
+        ref.Py_INCREF(future)
         #ref.Py_INCREF(datain)
         #ref.Py_INCREF(key)
         #ref.Py_INCREF(iv)
@@ -64,7 +66,7 @@ cdef class Aead:
         obj_buffer[2] = <void *>iv
         obj_buffer[3] = <void *>aad
         obj_buffer[4] = <void *>output
-        obj_buffer[5] = <void *>future     
+        obj_buffer[5] = <void *>future
 
         ptr_buffer = <void ***>malloc(sizeof(void *) * 3) 
         nullcheck(ptr_buffer, "ptr initialization")

@@ -2,8 +2,7 @@ import os
 import gc
 import unittest
 import multiprocessing
-
-
+import asyncio
 
 
 class timedoutprocess:
@@ -25,6 +24,16 @@ class timedoutprocess:
                 raise(RuntimeError("Process returned error code %d" % p.exitcode))
             return lpipe.recv()
         return wrappee
+    
+
+def async_test(coro):
+    def wrapper(*args, **kwargs):
+        loop = asyncio.get_event_loop()
+        try:
+            return loop.run_until_complete(coro(*args, **kwargs))
+        finally:
+            loop.close()
+    return wrapper
     
     
 def gendata(size=256, fixed=False):
@@ -88,9 +97,16 @@ class TestModule(unittest.TestCase):
     def test_add(self):
         import asyncaead as aead
         a = aead.Aead(1)
-        a.aencrypt(*gendata(fixed=True))
+        retval = a.aencrypt(*gendata(fixed=True))
         a.close()
         del(a)
+        print(retval)
+       
+    @async_test
+    async def test_async(self):
+        import asyncaead as aead
+        a = aead.Aead(1)
+        await a.aencrypt(*gendata(fixed=True))
 
 if __name__ == '__main__':
     gc.set_debug(gc.DEBUG_STATS | gc.DEBUG_SAVEALL | gc.DEBUG_UNCOLLECTABLE)
