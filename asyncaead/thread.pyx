@@ -34,18 +34,14 @@ cdef void * worker(void *arg) nogil:
         while queue_enabled:
             # lock the buffer
             errcheckt(pthread.pthread_mutex_lock(&queue_lock))
-            printf("Worker %ld working, enabled: %d, distance: %d, cursor: %d\n", thid, queue_enabled, queue_distance, queue_cursor)
             
             # check if buffer is empty
             while queue_distance == 0:
-                printf("Worker %ld waiting, enabled: %d, distance: %d, cursor: %d\n", thid, queue_enabled, queue_distance, queue_cursor)
                 # check if stop flag has been raised or not
                 if not queue_enabled:
                     errcheckt(pthread.pthread_mutex_unlock(&queue_lock))
-                    printf("Worker %ld released lock and quit, enabled: %d, distance: %d, cursor: %d\n", thid, queue_enabled, queue_distance, queue_cursor)
                     return <void *>0
                 errcheckt(pthread.pthread_cond_wait(&queue_cond_empty, &queue_lock))
-            printf("Worker %ld passed, enabled: %d, distance: %d, cursor: %d\n", thid, queue_enabled, queue_distance, queue_cursor)
             # calculate the fifo bottom queue_cursor from the queue_cursor:
             # below is basically (queue_cursor - queue_distance) % queue_maxsize,
             # but below algo is faster since it only uses conditional add/sub instead of
@@ -57,37 +53,27 @@ cdef void * worker(void *arg) nogil:
             elif cursor < 0:
                 cursor += queue_maxsize
             
-            printf("1\n")
+            if queue_distance > 7:
+                printf("backlog: %d\n", queue_distance)
             # get the backlog struct
             backlog = queue_backlogs[cursor]
-            printf("2\n")
             # decrase the distance from queue queue_cursor
             queue_distance -= 1
-            printf("3\n")
             # signal to check if full, since we popped from the FIFO
             errcheckt(pthread.pthread_cond_broadcast(&queue_cond_full))
-            printf("4\n")
             # unlock the buffer
             errcheckt(pthread.pthread_mutex_unlock(&queue_lock))
-            printf("5\n")
             # encrypt/decrypt the struct
             enct(backlog)
-            printf("6\n")
             # acquite the GIL and provide the result to Future
             # TO-DO: handle exceptions here and pass to the Future
-            printf("7\n")
             with gil:
                 try:
-                    printf("8\n")
                     future = <object>backlog[0][5]
-                    printf("9\n")
                     data = <bytes>backlog[0][4]
-                    printf("9.5\n")
                     future._loop.call_soon_threadsafe(future.set_result, data)
                     ref.Py_DECREF(future)
-                    printf("10\n")
                     #decrease reference so GC can clean it when it is done with it.
-                    printf("11\n")
                 except Exception as e:
                     print("Error............................")
                     print(e)
@@ -212,26 +198,25 @@ cdef int add_queue(void ***ptrbuffer) except -1:
     global queue_cond_full
     global queue_cond_empty
 
-    errcheck(pthread.pthread_mutex_lock(&queue_lock))
-
-    while queue_distance == queue_maxsize:
-        if not queue_enabled:
-            errcheck(pthread.pthread_mutex_unlock(&queue_lock))
-            return 0
-        printf("Add waiting, enabled: %d, distance: %d, cursor: %d\n", queue_enabled, queue_distance, queue_cursor)
-        errcheck(pthread.pthread_cond_wait(&queue_cond_full, &queue_lock))
-
-    queue_backlogs[queue_cursor] = ptrbuffer
-
-    queue_distance += 1
-    queue_cursor +=1
-    if queue_cursor > queue_maxsize:
-        queue_cursor -= queue_maxsize
-    elif queue_cursor < 0:
-        queue_cursor += queue_maxsize
+    with nogil:
+        errcheck(pthread.pthread_mutex_lock(&queue_lock))
     
-    errcheck(pthread.pthread_cond_broadcast(&queue_cond_empty))
-    errcheck(pthread.pthread_mutex_unlock(&queue_lock))
+        while queue_distance == queue_maxsize:
+            if not queue_enabled:
+                errcheck(pthread.pthread_mutex_unlock(&queue_lock))
+                return 0
+            errcheck(pthread.pthread_cond_wait(&queue_cond_full, &queue_lock))
     
-    printf("Added to queue\n")
+        queue_backlogs[queue_cursor] = ptrbuffer
+    
+        queue_distance += 1
+        queue_cursor +=1
+        if queue_cursor > queue_maxsize:
+            queue_cursor -= queue_maxsize
+        elif queue_cursor < 0:
+            queue_cursor += queue_maxsize
+        
+        errcheck(pthread.pthread_cond_broadcast(&queue_cond_empty))
+        errcheck(pthread.pthread_mutex_unlock(&queue_lock))
+    
     return 1

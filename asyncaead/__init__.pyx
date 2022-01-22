@@ -34,11 +34,11 @@ cdef class Aead:
         output = bytes(object.PyObject_Size(datain) + taglen)
         future = Future(loop=self.loop)
         ref.Py_INCREF(future)
-        #ref.Py_INCREF(datain)
-        #ref.Py_INCREF(key)
-        #ref.Py_INCREF(iv)
-        #ref.Py_INCREF(aad)
-        #ref.Py_INCREF(output)
+        ref.Py_INCREF(datain)
+        ref.Py_INCREF(key)
+        ref.Py_INCREF(iv)
+        ref.Py_INCREF(aad)
+        ref.Py_INCREF(output)
 
         # is there a faster way to do below assignment in cython?
         int_buffer = <int *>malloc(sizeof(int) * 7)

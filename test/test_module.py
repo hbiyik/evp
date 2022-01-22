@@ -57,6 +57,7 @@ class TestModule(unittest.TestCase):
     def tearDown(self):
         pass
 
+    """
     @timedoutprocess()
     def test_import(self):
         import asyncaead as aead
@@ -101,14 +102,18 @@ class TestModule(unittest.TestCase):
         a.close()
         del(a)
         print(retval)
+    """
        
     @async_test
     async def test_async(self):
         import asyncaead as aead
-        a = aead.Aead(1)
-        await a.aencrypt(*gendata(fixed=True))
+        a = aead.Aead(8)
+        content, key, nonce, aad = gendata(size=10**5, fixed=True)
+        while True:
+            a.aencrypt(content, key, nonce, aad)
+
 
 if __name__ == '__main__':
-    gc.set_debug(gc.DEBUG_STATS | gc.DEBUG_SAVEALL | gc.DEBUG_UNCOLLECTABLE)
+    #gc.set_debug(gc.DEBUG_STATS | gc.DEBUG_SAVEALL | gc.DEBUG_UNCOLLECTABLE)
     unittest.main()
-    gc.collect()
+    #gc.collect()
