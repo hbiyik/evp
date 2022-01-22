@@ -19,43 +19,18 @@ cdef int enc(bint isenc,
     return 1
 
 
-cdef int enct(void ***buffer) nogil except -1:
+cdef int enct(backlog_t *backlog) nogil except -1:
     cdef evp.EVP_CIPHER_CTX *ctx = evp.EVP_CIPHER_CTX_new()
-    cdef int * int_buffer = <int *>buffer[1]
-    cdef unsigned char ** chr_buffer = <unsigned char **>buffer[2]
-    
     if ctx == NULL:
         evp.EVP_CIPHER_CTX_free(ctx)
         return -1
-    errcheck_sslt(evp.EVP_CipherInit_ex(ctx,
-                                        evp.EVP_chacha20_poly1305(),  # TO-DO: make this generic
-                                        NULL,                         # engine -> None
-                                        chr_buffer[1],                # key*
-                                        chr_buffer[2],                # iv* 
-                                        int_buffer[6]),               # isenc:int
-                                        ctx)
-    errcheck_sslt(evp.EVP_CIPHER_CTX_ctrl(ctx,
-                                          evp.EVP_CTRL_AEAD_SET_IVLEN,# TO-DO: make this generic
-                                          int_buffer[2],              # ivlen: int
-                                          NULL), ctx)
-    if int_buffer[3] > 0:                                             # if len(aad) > 0
-        errcheck_sslt(evp.EVP_CipherUpdate(ctx,
-                                           NULL,
-                                           &int_buffer[4] ,           # outlen*
-                                           chr_buffer[3],             # aad*
-                                           int_buffer[3]), ctx)       # inlen: int
-    errcheck_sslt(evp.EVP_CipherUpdate(ctx,
-                                       chr_buffer[4],                 # out*
-                                       &int_buffer[4],                # outlen*
-                                       chr_buffer[0],                 # in*
-                                       int_buffer[0]), ctx)           # inlen: int
-    errcheck_sslt(evp.EVP_CipherFinal_ex(ctx,
-                                         chr_buffer[4],                # out*
-                                         &int_buffer[4]), ctx)         # outlen*
-    if int_buffer[6] == 1:                                             # if isenc
-        errcheck_sslt(evp.EVP_CIPHER_CTX_ctrl(ctx,
-                                              evp.EVP_CTRL_AEAD_GET_TAG,              # TO-DO: make this generic
-                                              int_buffer[5],                          # taglen: int
-                                              &chr_buffer[4][int_buffer[4]]), ctx)    # tag*
+    errcheck_sslt(evp.EVP_CipherInit_ex(ctx, evp.EVP_chacha20_poly1305(), NULL, backlog.key, backlog.iv, backlog.isenc), ctx)
+    errcheck_sslt(evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_SET_IVLEN, backlog.ivlen, NULL), ctx)
+    if backlog.aadlen > 0:
+        errcheck_sslt(evp.EVP_CipherUpdate(ctx, NULL, &backlog.outputlen, backlog.aad, backlog.inputlen), ctx)
+    errcheck_sslt(evp.EVP_CipherUpdate(ctx, backlog.output, &backlog.outputlen, backlog.datain, backlog.inputlen), ctx)
+    errcheck_sslt(evp.EVP_CipherFinal_ex(ctx, backlog.output, &backlog.outputlen), ctx)
+    if backlog.isenc == 1:
+        errcheck_sslt(evp.EVP_CIPHER_CTX_ctrl(ctx, evp.EVP_CTRL_AEAD_GET_TAG, backlog.taglen, &backlog.output[backlog.outputlen]), ctx)
     evp.EVP_CIPHER_CTX_free(ctx)
     return 1

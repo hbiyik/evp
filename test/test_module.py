@@ -3,6 +3,13 @@ import gc
 import unittest
 import multiprocessing
 import asyncio
+import time
+
+UVLOOP = False
+
+if UVLOOP:
+    import uvloop
+    uvloop.install()    
 
 
 class timedoutprocess:
@@ -57,7 +64,6 @@ class TestModule(unittest.TestCase):
     def tearDown(self):
         pass
 
-    """
     @timedoutprocess()
     def test_import(self):
         import asyncaead as aead
@@ -102,18 +108,27 @@ class TestModule(unittest.TestCase):
         a.close()
         del(a)
         print(retval)
-    """
        
     @async_test
     async def test_async(self):
         import asyncaead as aead
         a = aead.Aead(8)
-        content, key, nonce, aad = gendata(size=10**5, fixed=True)
-        while True:
-            a.aencrypt(content, key, nonce, aad)
+        content, key, nonce, aad = gendata(size=10 ** 5, fixed=True)
+
+        testsize = (10 ** 6) * 1000 # 1GB
+        chunksize = 100000 # 100kb
+        t1 = time.time()
+        for _ in range(int(testsize / chunksize)):
+            await a.aencrypt(content, key, nonce, aad)
+        print("throughput async: %s MB/s" % (testsize / (time.time() - t1) / (10 ** 6)))
+        t1 = time.time()
+        for _ in range(int(testsize / chunksize)):
+            a.encrypt(content, key, nonce, aad)
+        print("throughput sync: %s MB/s" % (testsize / (time.time() - t1) / (10 ** 6)))
+
 
 
 if __name__ == '__main__':
-    #gc.set_debug(gc.DEBUG_STATS | gc.DEBUG_SAVEALL | gc.DEBUG_UNCOLLECTABLE)
+    gc.set_debug(gc.DEBUG_STATS | gc.DEBUG_SAVEALL | gc.DEBUG_UNCOLLECTABLE)
     unittest.main()
-    #gc.collect()
+    gc.collect()

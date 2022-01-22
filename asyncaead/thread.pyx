@@ -1,202 +1,136 @@
-import time
-import sys
 from _asyncio import Future
 
 cdef int queue_cursor = 0
 cdef int queue_distance = 0
 cdef int queue_maxsize = 1
+cdef int queue_maxval = 0
 cdef pthread.pthread_t *queue_threads
-cdef void ****queue_backlogs # not sure if i should use a struct to leverage L1 data cache
+cdef backlog_t ** queue_backlogs
+cdef backlog_t ** queue_results
 cdef pthread.pthread_mutex_t queue_lock
 cdef pthread.pthread_cond_t queue_cond_empty
 cdef pthread.pthread_cond_t queue_cond_full
 cdef bint queue_enabled
-cdef pthread.pthread_attr_t threadattr
 
 
 cdef void * worker(void *arg) nogil:
     cdef pthread.pthread_t thid
-    cdef int retval
-    cdef void*** backlog
+    cdef backlog_t *backlog
     cdef int cursor
-    global queue_enabled
-    global queue_cursor
-    global queue_distance
-    global queue_maxsize
-    global queue_lock
-    global queue_cond_full
-    global queue_cond_empty
+    global queue_enabled, queue_maxsize, queue_maxval, queue_lock
+    global queue_cursor, queue_distance, queue_backlog_full, queue_cond_empty
     
     thid = pthread.pthread_self()
     printf("Worker %ld started, enabled: %d\n", thid, queue_enabled)
 
-    with nogil:
-        while queue_enabled:
-            # lock the buffer
+    while queue_enabled:
+        with nogil:
             errcheckt(pthread.pthread_mutex_lock(&queue_lock))
-            
-            # check if buffer is empty
             while queue_distance == 0:
-                # check if stop flag has been raised or not
                 if not queue_enabled:
                     errcheckt(pthread.pthread_mutex_unlock(&queue_lock))
-                    return <void *>0
+                    return NULL
                 errcheckt(pthread.pthread_cond_wait(&queue_cond_empty, &queue_lock))
-            # calculate the fifo bottom queue_cursor from the queue_cursor:
-            # below is basically (queue_cursor - queue_distance) % queue_maxsize,
-            # but below algo is faster since it only uses conditional add/sub instead of
-            # multiply / division operation, could be even faster with ASM intrinsics but
-            # lets keep it simple for now.
+
             cursor = queue_cursor - queue_distance
-            if cursor > queue_maxsize:
-                cursor -= queue_maxsize
-            elif cursor < 0:
+            if cursor < 0:
                 cursor += queue_maxsize
-            
-            if queue_distance > 7:
-                printf("backlog: %d\n", queue_distance)
-            # get the backlog struct
+
+            #if queue_distance > queue_maxval:
+            #    printf("backlog: %d\n", queue_distance)
+
             backlog = queue_backlogs[cursor]
-            # decrase the distance from queue queue_cursor
             queue_distance -= 1
-            # signal to check if full, since we popped from the FIFO
             errcheckt(pthread.pthread_cond_broadcast(&queue_cond_full))
-            # unlock the buffer
             errcheckt(pthread.pthread_mutex_unlock(&queue_lock))
-            # encrypt/decrypt the struct
-            enct(backlog)
-            # acquite the GIL and provide the result to Future
-            # TO-DO: handle exceptions here and pass to the Future
-            with gil:
-                try:
-                    future = <object>backlog[0][5]
-                    data = <bytes>backlog[0][4]
-                    future._loop.call_soon_threadsafe(future.set_result, data)
-                    ref.Py_DECREF(future)
-                    #decrease reference so GC can clean it when it is done with it.
-                except Exception as e:
-                    print("Error............................")
-                    print(e)
-                    print(repr(e))
+
+        enct(backlog)
+        with gil:
+            try:
+                future = <object>backlog.future_o
+                output = <object>backlog.output_o
+                future._loop.call_soon_threadsafe(future.set_result, output)
+                ref.Py_DECREF(future)
+                ref.Py_DECREF(output)
+                ref.Py_XDECREF(<ref.PyObject *>backlog.datain_o)
+                ref.Py_XDECREF(<ref.PyObject *>backlog.key_o)
+                ref.Py_XDECREF(<ref.PyObject *>backlog.iv_o)
+                ref.Py_XDECREF(<ref.PyObject *>backlog.aad_o)
+                free(backlog)
+            except Exception as e:
+                print("Error............................")
+                print(e)
+                print(repr(e))
 
     printf("Worker %ld finished, enabled: %d\n", thid, queue_enabled)
 
 
-cdef int init_threads(unsigned int maxsize) except -1:
-    global queue_enabled
-    global queue_cursor
-    global queue_distance
-    global queue_maxsize
-    global queue_lock
-    global queue_cond_full
-    global queue_cond_empty
-    global queue_backlogs
-    global queue_threads
-    global threadattr
-    global m_int_state
-    global m_th_state
+cdef int init_threads(unsigned int maxsize) nogil except -1:
+    cdef int i 
+    global queue_enabled, queue_maxsize, queue_maxval, queue_lock
+    global queue_backlogs, queue_threads
+    global queue_cursor, queue_distance, queue_cond_full, queue_cond_empty
 
-    queue_cursor = 0
-    queue_distance = 0
-    queue_enabled = 1
-    queue_maxsize = maxsize
-
-    printf("Initializing Threads, cursor:%d, distance:%d, enabled:%d, size:%d\n", queue_cursor, queue_distance, queue_enabled, queue_maxsize)
+    with nogil:
+        queue_cursor = queue_disance = 0
+        queue_enabled = 1
+        queue_maxsize = maxsize
+        queue_maxval = queue_maxsize - 1
     
-    queue_backlogs = <void ****> malloc((queue_maxsize) * sizeof(void *) * 3)
-    nullcheck(queue_backlogs, "Queue Backlogs init")
-    queue_threads = <pthread.pthread_t *> malloc(queue_maxsize * sizeof(pthread.pthread_t))
-    nullcheck(queue_backlogs, "Queue Threads init")
-
-    errcheck(pthread.pthread_mutex_init(&queue_lock, NULL))
-    errcheck(pthread.pthread_cond_init(&queue_cond_empty, NULL))
-    errcheck(pthread.pthread_cond_init(&queue_cond_full, NULL))
-    for index in range(queue_maxsize):
-        printf("Creating thread %d\n", index)
-        errcheck(pthread.pthread_create(&queue_threads[index], &threadattr, &worker, NULL))
-        printf("Created thread %d:%ld\n", index, queue_threads[index])
-    return 1
+        queue_backlogs = <backlog_t **> malloc((queue_maxsize) * sizeof(backlog_t *))
+        nullcheck(queue_backlogs, "Queue Backlogs init")
+        queue_threads = <pthread.pthread_t *> malloc(queue_maxsize * sizeof(pthread.pthread_t))
+        nullcheck(queue_backlogs, "Queue Threads init")
+    
+        errcheck(pthread.pthread_mutex_init(&queue_lock, NULL))
+        errcheck(pthread.pthread_cond_init(&queue_cond_empty, NULL))
+        errcheck(pthread.pthread_cond_init(&queue_cond_full, NULL))
+        for i in range(queue_maxsize):
+            errcheck(pthread.pthread_create(&queue_threads[i], NULL, &worker, NULL))
+        return 1
 
 
-cdef free_backlog(cursor):
-    for i in range(3):
-        if i == 0:
-            for j in range(6):
-                # remove refrences to python objeccts so gc can handle
-                ref.Py_XDECREF(<ref.PyObject *>queue_backlogs[cursor][i][j])
-        # free memblock dor subset of the backlog
-        free(queue_backlogs[cursor][i])
-    # free ptr buffer/backlog
-    free(queue_backlogs[cursor])
-
-
-cdef int destroy_threads() except -1:
-    cdef int cursor = 0
-    cdef int retval = 0
-    cdef gil.PyThreadState* thstate
-    global queue_enabled
-    global queue_cursor
-    global queue_distance
-    global queue_maxsize
-    global queue_lock
-    global queue_cond_full
-    global queue_cond_empty
-    global queue_backlogs
-    global queue_threads
-
-    cdef int* size_buffer
-    cdef unsigned char *out_buf
-    cdef int index   
-    printf("Destroying Threads\n")
+cdef int destroy_threads() nogil except -1:
+    cdef int i = 0
+    global queue_enabled, queue_maxsize, queue_maxval, queue_lock
+    global queue_backlogs, queue_results, queue_threads
+    global queue_cursor, queue_distance, queue_cond_full, queue_cond_empty
     
     with nogil:
         errcheck(pthread.pthread_mutex_lock(&queue_lock))
         queue_enabled = 0
-        printf("Destroy set enabled to 0\n")
         errcheck(pthread.pthread_cond_broadcast(&queue_cond_empty))
-        errcheck(pthread.pthread_mutex_unlock(&queue_lock))
+        errcheck(pthread.pthread_cond_broadcast(&queue_cond_full))
+        errcheck(pthread.pthread_mutex_unlock(&queue_lock))   
         
-        for index in range(queue_maxsize):
-            # join threads first
-            printf("joining thread %ld, maxsize=%d\n", queue_threads[index], queue_maxsize)
-            pthread.pthread_join(queue_threads[index], NULL)
-            printf("joined thread %ld\n", queue_threads[index])
-        printf("test1\n")
-    for distance in range(queue_distance):
-        cursor = (queue_cursor - distance)
-        if cursor > queue_maxsize:
-            cursor -= queue_maxsize
-        elif cursor < 0:
-            cursor += queue_maxsize
-        # we decrease the refcount of Python objects in buffer which have not been popped,
-        # so GC can collect them
-        printf("cleaning the backlog at cursor %d\n", cursor)
-        free_backlog(cursor)
-    # free baclogs list
+        for i in range(queue_maxsize):
+            pthread.pthread_join(queue_threads[i], NULL)
+        if queue_threads is not NULL:
+             free(queue_threads)   
+    with gil:
+        for i in range(queue_distance):
+            queue_cursor -= 1
+            if queue_cursor == -1:
+                queue_cursor = queue_maxval
+            ref.Py_XDECREF(queue_backlogs[queue_cursor].future_o)
+            ref.Py_XDECREF(queue_backlogs[queue_cursor].datain_o)
+            ref.Py_XDECREF(queue_backlogs[queue_cursor].key_o)
+            ref.Py_XDECREF(queue_backlogs[queue_cursor].iv_o)
+            ref.Py_XDECREF(queue_backlogs[queue_cursor].aad_o)
+            ref.Py_XDECREF(queue_backlogs[queue_cursor].output_o)
+            free(queue_backlogs[queue_cursor])
+
     if queue_backlogs is not NULL:
-        printf("cleaning backlog buffer\n")
         free(queue_backlogs)
-    printf("destroying mutex\n")
     pthread.pthread_mutex_destroy(&queue_lock)
-    printf("destroying emptycond\n")
     pthread.pthread_cond_destroy(&queue_cond_empty)
-    printf("destroying fullcond\n")
     pthread.pthread_cond_destroy(&queue_cond_full)
-    if queue_threads is not NULL:
-        printf("cleaning thread buffer\n")
-        free(queue_threads)
-    printf("clenaed threads\n")
-    return 0
+    return 1
 
 
-cdef int add_queue(void ***ptrbuffer) except -1:
-    global queue_enabled
-    global queue_cursor
-    global queue_distance
-    global queue_maxsize
-    global queue_lock
-    global queue_cond_full
-    global queue_cond_empty
+cdef int add_queue(backlog_t *backlog) except -1:
+    global queue_enabled, queue_maxsize, queue_maxval, queue_lock 
+    global queue_cursor, queue_distance, queue_cond_full, queue_cond_empty
 
     with nogil:
         errcheck(pthread.pthread_mutex_lock(&queue_lock))
@@ -204,17 +138,15 @@ cdef int add_queue(void ***ptrbuffer) except -1:
         while queue_distance == queue_maxsize:
             if not queue_enabled:
                 errcheck(pthread.pthread_mutex_unlock(&queue_lock))
-                return 0
+                return -1
             errcheck(pthread.pthread_cond_wait(&queue_cond_full, &queue_lock))
     
-        queue_backlogs[queue_cursor] = ptrbuffer
+        queue_backlogs[queue_cursor] = backlog
     
         queue_distance += 1
         queue_cursor +=1
-        if queue_cursor > queue_maxsize:
-            queue_cursor -= queue_maxsize
-        elif queue_cursor < 0:
-            queue_cursor += queue_maxsize
+        if queue_cursor == queue_maxsize:
+            queue_cursor = 0
         
         errcheck(pthread.pthread_cond_broadcast(&queue_cond_empty))
         errcheck(pthread.pthread_mutex_unlock(&queue_lock))
