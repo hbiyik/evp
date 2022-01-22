@@ -15,13 +15,19 @@ from asyncaead.python cimport gil
 cdef struct backlog_t:
     bint isenc,
     unsigned char *output,
-    int outputlen, 
     unsigned char *datain,
-    int inputlen,
     unsigned char *key,
     unsigned char *iv,
-    int ivlen,
     unsigned char *aad,
+    int outputlen,
+    int inputlen,
+    int keylen,
+    int ivlen,
     int aadlen,
-    unsigned char *tag,
-    void *future
+    int taglen,
+    ref.PyObject *output_o
+    ref.PyObject *datain_o
+    ref.PyObject *key_o
+    ref.PyObject *iv_o
+    ref.PyObject *aad_o
+    ref.PyObject *future_o
